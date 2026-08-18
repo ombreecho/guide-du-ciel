@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      color: white;
+      background: radial-gradient(circle at top, #173d70, #050b17 70%);
+    }
+
+    main {
+      max-width: 700px;
+      margin: auto;
+      padding: 20px;
+    }
+
+    h1 { margin-bottom: 5px; }
+    .subtitle { color: #9ccfff; margin-top: 0; }
+
+    .settings, .guide {
+      margin: 20px 0;
+      padding: 16px;
+      border: 1px solid #32699e;
+      border-radius: 15px;
+      background: rgba(10, 30, 58, 0.9);
+    }
+
+    label {
+      display: inline-block;
+      margin: 8px 8px 8px 0;
+      color: #b8d9f5;
+    }
+
+    input {
+      width: 105px;
+      padding: 8px;
+      color: white;
+      border: 1px solid #528bc0;
+      border-radius: 8px;
+      background: #061526;
+    }
+
+    button {
+      padding: 12px;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      border: 1px solid #58bdf1;
+      border-radius: 12px;
+      background: #124d7a;
+    }
+
+    button:hover, button.active {
+      background: #1975ad;
+      border-color: white;
+    }
+
+    #objects {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .object-button small {
+      display: block;
+      margin-top: 5px;
+      color: #b9d7eb;
+      font-weight: normal;
+    }
+
+    .coordinates {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 18px 0;
+    }
+
+    .coordinate {
+      padding: 14px;
+      border-radius: 12px;
+      background: #06192c;
+    }
+
+    .coordinate span {
+      color: #9ac8ea;
+      font-size: 12px;
+    }
+
+    .coordinate strong {
+      display: block;
+      margin-top: 5px;
+      color: #78dcff;
+      font-size: 28px;
+    }
+
+    .warning { color: #ffbf70; }
+  </style>
+</head>
+
+<body>
+  <main>
+    
+
+    <section class="settings">
+      <label>
+        Latitude
+        <input id="latitude" type="number" step="0.0001" value="00.0000">
+      </label>
+
+      <label>
+        Longitude
+        <input id="longitude" type="number" step="0.0001" value="0.0000">
+      </label>
+
+      <button onclick="mettreAJour()">Mettre à jour</button>
+
+      <p id="heure"></p>
+    </section>
+
+    <h2>Objets à observer</h2>
+    <section id="objects"></section>
+
+    <section id="guide" class="guide">
+      <h2>Bienvenue</h2>
+      <p>Choisis un objet dans la liste.</p>
+    </section>
+  </main>
+
+  <script>
+    const objets = [
+      { nom: "Lune", type: "", ra: 8.2, dec: 20.0 },
+      { nom: "Jupiter", type: "", ra: 4.8, dec: 21.0 },
+      { nom: "Saturne", type: "", ra: 0.1, dec: -1.0 },
+      { nom: "Vénus", type: "", ra: 1.5, dec: 9.0 },
+      { nom: "M31", type: "Galaxie d'Andromède", ra: 0.712, dec: 41.269 },
+      { nom: "M42", type: "Nébuleuse d'Orion", ra: 5.591, dec: -5.391 }
+    ];
+
+    let objetSelectionne = null;
+
+    function radians(degres) {
+      return degres * Math.PI / 180;
+    }
+
+    function degres(radians) {
+      return radians * 180 / Math.PI;
+    }
+
+    function normaliser(angle) {
+      return (angle % 360 + 360) % 360;
+    }
+
+    function tempsSideral(date, longitude) {
+      const jourJulien = date.getTime() / 86400000 + 2440587.5;
+      const joursDepuis2000 = jourJulien - 2451545.0;
+
+      const angle =
+        280.46061837 +
+        360.98564736629 * joursDepuis2000 +
+        longitude;
+
+      return normaliser(angle) / 15;
+    }
+
+    function calculerPosition(ra, dec, latitude, longitude) {
+      const date = new Date();
+      const heureAngulaire = radians(
+        (tempsSideral(date, longitude) - ra) * 15
+      );
+
+      const declinaison = radians(dec);
+      const lat = radians(latitude);
+
+      const hauteur = Math.asin(
+        Math.sin(lat) * Math.sin(declinaison) +
+        Math.cos(lat) * Math.cos(declinaison) * Math.cos(heureAngulaire)
+      );
+
+      const azimut = Math.atan2(
+        -Math.sin(heureAngulaire),
+        Math.tan(declinaison) * Math.cos(lat) -
+        Math.sin(lat) * Math.cos(heureAngulaire)
+      );
+
+      return {
+        azimut: normaliser(degres(azimut)),
+        hauteur: degres(hauteur)
+      };
+    }
+
+    function direction(azimut) {
+      const directions = [
+        "Nord", "Nord-est", "Est", "Sud-est",
+        "Sud", "Sud-ouest", "Ouest", "Nord-ouest"
+      ];
+
+      return directions[Math.round(azimut / 45) % 8];
+    }
+
+    function afficherObjets() {
+      const conteneur = document.getElementById("objects");
+      conteneur.innerHTML = "";
+
+      objets.forEach((objet, index) => {
+        const bouton = document.createElement("button");
+
+        bouton.className = "object-button";
+        if (objetSelectionne === index) bouton.classList.add("active");
+
+        bouton.innerHTML = `
+          ${objet.nom}
+          <small>${objet.type}</small>
+        `;
+
+        bouton.onclick = () => {
+          objetSelectionne = index;
+          afficherObjets();
+          afficherGuidage();
+        };
+
+        conteneur.appendChild(bouton);
+      });
+    }
+
+    function afficherGuidage() {
+      if (objetSelectionne === null) return;
+
+      const objet = objets[objetSelectionne];
+      const latitude = Number(document.getElementById("latitude").value);
+      const longitude = Number(document.getElementById("longitude").value);
+
+      const position = calculerPosition(
+        objet.ra,
+        objet.dec,
+        latitude,
+        longitude
+      );
+
+      const visible = position.hauteur >= 0;
+
+      document.getElementById("guide").innerHTML = `
+        <h2>${objet.nom}</h2>
+        <p>${objet.type}</p>
+
+        <div class="coordinates">
+          <div class="coordinate">
+            <span>DIRECTION</span>
+            <strong>${Math.round(position.azimut)}°</strong>
+            ${direction(position.azimut)}
+          </div>
+
+          <div class="coordinate ${visible ? "" : "warning"}">
+            <span>HAUTEUR</span>
+            <strong>${Math.round(position.hauteur)}°</strong>
+            ${visible ? "Au-dessus de l'horizon" : "Sous l'horizon"}
+          </div>
+        </div>
+
+        <p>
+          ${
+            visible
+              ? `Tourne le télescope vers le ${direction(position.azimut)}, puis monte-le à ${Math.round(position.hauteur)}°.`
+              : "Cet objet est actuellement sous l'horizon."
+          }
+        </p>
+      `;
+    }
+
+    function mettreAJour() {
+      afficherGuidage();
+    }
+
+    function afficherHeure() {
+      document.getElementById("heure").textContent =
+        "Heure : " + new Date().toLocaleString("fr-FR");
+    }
+
+    afficherObjets();
+    afficherHeure();
+    setInterval(() => {
+      afficherHeure();
+      afficherGuidage();
+    }, 60000);
+  </script>
+</body>
+</html>
